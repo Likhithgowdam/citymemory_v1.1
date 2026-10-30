@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ink">#18232E</color>
+    <color name="paper">#F3F6F7</color>
+    <color name="kerb">#F2C200</color>
+    <color name="rain">#2F6F9F</color>
+    <color name="white">#FFFFFF</color>
+</resources>

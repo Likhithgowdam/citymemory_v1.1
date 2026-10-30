@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- City Memory icon: a white map pin over a yellow kerb stripe -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,28C44.6,28 37,35.3 37,44.4C37,56.5 54,72 54,72C54,72 71,56.5 71,44.4C71,35.3 63.4,28 54,28Z" />
+    <path
+        android:fillColor="#18232E"
+        android:pathData="M54,38A6.5,6.5 0,1 1,54 51A6.5,6.5 0,1 1,54 38Z" />
+    <path
+        android:fillColor="#F2C200"
+        android:pathData="M36,76L72,76L72,82L36,82Z" />
+    <path
+        android:fillColor="#18232E"
+        android:pathData="M42,76L45.5,76L41.5,82L38,82ZM50,76L53.5,76L49.5,82L46,82ZM58,76L61.5,76L57.5,82L54,82ZM66,76L69.5,76L65.5,82L62,82Z" />
+</vector>

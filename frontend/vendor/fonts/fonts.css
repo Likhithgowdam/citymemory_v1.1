@@ -1,0 +1,10 @@
+/* Bundled fonts (SIL Open Font License) so the demo works without internet. */
+@font-face{font-family:"Public Sans";font-style:normal;font-weight:400;font-display:swap;src:url("public-sans-latin-400-normal.woff2") format("woff2");}
+@font-face{font-family:"Public Sans";font-style:normal;font-weight:500;font-display:swap;src:url("public-sans-latin-500-normal.woff2") format("woff2");}
+@font-face{font-family:"Public Sans";font-style:normal;font-weight:600;font-display:swap;src:url("public-sans-latin-600-normal.woff2") format("woff2");}
+@font-face{font-family:"Public Sans";font-style:normal;font-weight:700;font-display:swap;src:url("public-sans-latin-700-normal.woff2") format("woff2");}
+@font-face{font-family:"Barlow Semi Condensed";font-style:normal;font-weight:500;font-display:swap;src:url("barlow-semi-condensed-latin-500-normal.woff2") format("woff2");}
+@font-face{font-family:"Barlow Semi Condensed";font-style:normal;font-weight:600;font-display:swap;src:url("barlow-semi-condensed-latin-600-normal.woff2") format("woff2");}
+@font-face{font-family:"Barlow Semi Condensed";font-style:normal;font-weight:700;font-display:swap;src:url("barlow-semi-condensed-latin-700-normal.woff2") format("woff2");}
+@font-face{font-family:"Noto Sans Kannada";font-style:normal;font-weight:400;font-display:swap;src:url("noto-sans-kannada-kannada-400-normal.woff2") format("woff2");unicode-range:U+0C80-0CFF,U+200C-200D,U+25CC;}
+@font-face{font-family:"Noto Sans Kannada";font-style:normal;font-weight:600;font-display:swap;src:url("noto-sans-kannada-kannada-600-normal.woff2") format("woff2");unicode-range:U+0C80-0CFF,U+200C-200D,U+25CC;}

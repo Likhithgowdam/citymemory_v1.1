@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CityMemory</title>
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<style>
+:root{
+  --paper:#F3F6F7; --sheet:#FFFFFF; --ink:#18232E; --ink-2:#3A4A57; --muted:#5B6B78; --rule:#D3DCE1;
+  --rain:#2F6F9F; --rain-wash:#E2EDF5; --fail:#C2412D; --fail-wash:#F8E6E2;
+  --kerb:#F2C200; --amber:#B7791F; --fixed:#2E7D5B; --fixed-wash:#E3F1EA; --planned:#2F6F9F;
+  --display:"Barlow Semi Condensed","Arial Narrow",sans-serif;
+  --body:"Public Sans","Noto Sans Kannada",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--body)}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--rain);outline-offset:2px}
+.kn{font-family:"Noto Sans Kannada",var(--body)}
+
+/* ---------- top bar ---------- */
+.top{display:flex;align-items:center;gap:28px;padding:14px 24px;background:var(--ink);color:#fff;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:12px}
+.brand b{font:700 26px/1 var(--display);letter-spacing:.2px}
+.brand span{color:#B9C6D0;font-size:14px}
+.headline{flex:1;min-width:280px;font-size:15px;color:#E6ECF0}
+.headline strong{font:700 19px var(--display);color:#fff}
+.top-actions{display:flex;gap:10px;align-items:center}
+.pill{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid #4C5E6C;color:#D7E0E6}
+.pill.on{border-color:var(--kerb);color:var(--kerb)}
+.btn{border:1px solid var(--ink);background:var(--sheet);padding:7px 14px;border-radius:6px;cursor:pointer;font-weight:600}
+.btn:hover{background:var(--rain-wash)}
+.btn.primary{background:var(--ink);color:#fff}
+.btn.primary:hover{background:var(--ink-2)}
+.btn.quiet{border-color:var(--rule);font-weight:500}
+.top .btn{background:transparent;color:#fff;border-color:#4C5E6C}
+.top .btn:hover{background:#26343F}
+.btn:disabled{opacity:.5;cursor:default}
+
+/* ---------- main grid ---------- */
+.work{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(360px,1fr);gap:18px;padding:18px 24px;height:calc(100vh - 70px);min-height:560px}
+.mapbox{position:relative;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:#E9EEF1}
+#map{position:absolute;inset:0}
+.legend{position:absolute;left:12px;bottom:12px;z-index:500;background:var(--sheet);border:1px solid var(--rule);border-radius:6px;padding:8px 12px;font-size:13px;display:grid;gap:3px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;vertical-align:-1px}
+.maphint{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:500;background:var(--ink);color:#fff;padding:6px 12px;border-radius:6px;font-size:14px;display:none}
+.maphint.show{display:block}
+
+.side{display:flex;flex-direction:column;min-height:0;background:var(--sheet);border:1px solid var(--rule);border-radius:8px}
+.tabs{display:flex;border-bottom:1px solid var(--rule)}
+.tabs button{flex:1;background:none;border:0;border-bottom:3px solid transparent;padding:12px 6px;cursor:pointer;font-weight:600;color:var(--muted)}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
+.tabs .count{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:var(--fail);color:#fff;font-size:12px}
+.tabs .count[hidden]{display:none}
+.pane{flex:1;overflow:auto;padding:14px 16px;display:none}
+.pane.active{display:block}
+
+/* fix-first list */
+.listhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;color:var(--muted);font-size:14px}
+.listhead label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.row{display:grid;grid-template-columns:34px 1fr;gap:10px;padding:10px 6px;border-bottom:1px solid var(--rule);cursor:pointer;border-radius:4px}
+.row:hover,.row.sel{background:var(--rain-wash)}
+.rank{font:700 22px/1.1 var(--display);color:var(--muted);text-align:right}
+.row .id{font:700 17px var(--display)}
+.row .nm{color:var(--ink-2)}
+.row .why{font-size:13px;color:var(--muted);margin-top:2px}
+.band{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:4px;margin-left:6px;vertical-align:2px}
+.band.high{background:repeating-linear-gradient(-45deg,var(--kerb) 0 4px,var(--ink) 4px 8px) left/14px 100% no-repeat,var(--ink);color:#fff;padding-left:20px}
+.band.medium{background:#FBEFD2;color:#7A4E0B}
+.band.low{background:#E9EEF1;color:var(--ink-2)}
+.band.fixed{background:var(--fixed-wash);color:var(--fixed)}
+.band.planned{background:var(--rain-wash);color:var(--rain)}
+
+/* new complaint */
+.field{display:grid;gap:5px;margin-bottom:12px}
+.field label{font-weight:600}
+textarea{width:100%;min-height:76px;padding:9px 10px;border:1px solid #AFC0CA;border-radius:6px;resize:vertical;background:#FBFCFD}
+select{padding:7px 9px;border:1px solid #AFC0CA;border-radius:6px;background:#FBFCFD}
+.loc{font-size:14px;color:var(--muted)}
+.loc b{color:var(--ink)}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px}
+.presets button{font-size:13px;border:1px dashed #9FB2BE;background:none;border-radius:6px;padding:4px 9px;cursor:pointer}
+.presets button:hover{border-style:solid;background:var(--rain-wash)}
+.result{margin-top:14px;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.result .bar{padding:12px 14px;border-left:8px solid var(--ink)}
+.result.repeat .bar{border-left-color:transparent;border-image:repeating-linear-gradient(-45deg,var(--kerb) 0 8px,#1a1a1a 8px 16px) 1 / 0 0 0 8px;background:var(--fail-wash)}
+.result.review .bar{border-left-color:var(--amber);background:#FBF3E2}
+.result.new .bar{border-left-color:var(--rain);background:var(--rain-wash)}
+.result.first .bar{border-left-color:var(--ink-2)}
+.result h3{margin:0 0 4px;font:700 21px/1.2 var(--display)}
+.result .body{padding:10px 14px}
+.sig{display:grid;grid-template-columns:120px 1fr 44px;gap:8px;align-items:center;font-size:14px;margin:4px 0}
+.track{height:8px;background:#E6ECEF;border-radius:4px;overflow:hidden}
+.track i{display:block;height:100%;background:var(--ink-2)}
+.small{font-size:13px;color:var(--muted)}
+
+/* review */
+.rv{border-bottom:1px solid var(--rule);padding:10px 0}
+.rv p{margin:2px 0 8px}
+.rv .opts{display:flex;flex-wrap:wrap;gap:6px}
+
+/* ledger */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--rule)}
+th{font-weight:600;color:var(--muted)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---------- asset memory ---------- */
+.memory{margin:0 24px 28px;background:var(--sheet);border:1px solid var(--rule);border-radius:8px;display:none}
+.memory.show{display:block}
+.mhead{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between;padding:18px 22px 6px}
+.mhead .aid{font:700 34px/1 var(--display)}
+.mhead .anm{font-size:17px;color:var(--ink-2);margin-top:4px}
+.mhead .dept{font-size:14px;color:var(--muted)}
+.facts{display:flex;flex-wrap:wrap;gap:6px 28px;padding:6px 22px 4px}
+.facts div{font-size:14px;color:var(--muted)}
+.facts b{display:block;font:700 24px/1.15 var(--display);color:var(--ink)}
+.facts .warn b{color:var(--fail)}
+.strip{padding:6px 14px 0}
+.strip svg{width:100%;height:auto;display:block}
+.strip text{font-family:var(--body)}
+.mgrid{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(0,1.3fr) minmax(280px,1fr);gap:18px;padding:12px 22px 22px}
+.mgrid h4{margin:0 0 8px;font:700 18px var(--display)}
+.factor{margin-bottom:10px}
+.factor div:first-child{display:flex;justify-content:space-between;font-size:14px}
+.factor .track{height:10px}
+.factor .track i{background:var(--ink)}
+.score{font:700 30px var(--display)}
+.reasons{margin:8px 0 0;padding-left:18px;font-size:14px;color:var(--ink-2)}
+.records{max-height:340px;overflow:auto;border-top:1px solid var(--rule)}
+.rec{display:grid;grid-template-columns:86px 18px 1fr;gap:8px;padding:7px 4px;border-bottom:1px solid var(--rule);font-size:14px}
+.rec .dt{color:var(--muted);font-variant-numeric:tabular-nums}
+.rec .mk{margin-top:6px;width:10px;height:10px;border-radius:50%;background:var(--fail)}
+.rec.repair .mk{border-radius:0;width:0;height:0;background:none;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid var(--ink);margin-top:5px}
+.rec.permanent .mk{border-bottom-color:var(--fixed)}
+.rec .meta{font-size:12.5px;color:var(--muted)}
+.rec.hl{background:#FFF6CC}
+.ai{border:1px solid var(--rule);border-radius:8px;padding:14px}
+.ai .src{font-size:12.5px;color:var(--muted)}
+.ai p{margin:6px 0}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
+.chips button{font-size:12.5px;border:1px solid var(--rule);background:#F7F9FA;border-radius:4px;padding:2px 7px;cursor:pointer}
+.decision{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.done{margin-top:10px;padding:8px 10px;border-radius:6px;background:var(--fixed-wash);color:var(--fixed);font-weight:600}
+.close{border:0;background:none;font-size:26px;line-height:1;cursor:pointer;color:var(--muted);padding:4px 8px}
+
+.toast{position:fixed;right:20px;bottom:20px;background:var(--ink);color:#fff;padding:10px 14px;border-radius:6px;display:none;z-index:2000}
+.toast.show{display:block}
+
+@media (max-width:1000px){
+  .work{grid-template-columns:1fr;height:auto}
+  .mapbox{height:52vh}
+  .side{max-height:none}
+  .mgrid{grid-template-columns:1fr}
+  .memory{margin:0 16px 20px}
+  .work,.top{padding-left:16px;padding-right:16px}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><b>CityMemory</b><span id="ward">Ward 151, Bengaluru</span></div>
+  <div class="headline" id="headline">Loading the ward's memory…</div>
+  <div class="top-actions">
+    <span class="pill" id="aimode" title="Where the AI suggestions come from">AI: …</span>
+    <button class="btn" id="resetBtn" title="Restore the original sample ward">Reset demo</button>
+  </div>
+</header>
+
+<main class="work">
+  <section class="mapbox" aria-label="Map of assets">
+    <div id="map"></div>
+    <div class="maphint" id="maphint">Click the map to place the complaint</div>
+    <div class="legend" aria-hidden="true">
+      <span><i style="background:var(--fail)"></i>Fix permanently</span>
+      <span><i style="background:var(--amber)"></i>Inspect soon</span>
+      <span><i style="background:#8A9AA6"></i>Routine</span>
+      <span><i style="background:var(--planned)"></i>Permanent fix planned</span>
+      <span><i style="background:var(--fixed)"></i>Fixed, being watched</span>
+    </div>
+  </section>
+
+  <section class="side">
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-pane="fix">Fix first</button>
+      <button role="tab" aria-selected="false" data-pane="new">New complaint</button>
+      <button role="tab" aria-selected="false" data-pane="review">Review <span class="count" id="rvCount" hidden></span></button>
+      <button role="tab" aria-selected="false" data-pane="money">Spending</button>
+    </div>
+
+    <div class="pane active" id="pane-fix">
+      <div class="listhead">
+        <span id="listInfo"></span>
+        <label><input type="checkbox" id="onlyRisk"> At risk before next monsoon</label>
+      </div>
+      <div id="fixList"></div>
+    </div>
+
+    <div class="pane" id="pane-new">
+      <div class="field">
+        <label for="ctext">What did the citizen say?</label>
+        <textarea id="ctext" placeholder="Any language: English, Kannada or Kanglish"></textarea>
+      </div>
+      <div class="field">
+        <label for="cchan">Came in through</label>
+        <select id="cchan"><option value="app">Complaint app</option><option value="helpline">Helpline call</option><option value="whatsapp">WhatsApp</option><option value="meeting">Public meeting</option></select>
+      </div>
+      <div class="loc" id="locText">Location: <b>not set</b>. Click the map, or try an example below.</div>
+      <div class="small" style="margin-top:10px">Examples for the demo</div>
+      <div class="presets" id="presets"></div>
+      <button class="btn primary" id="checkBtn">Check complaint</button>
+      <div id="result"></div>
+    </div>
+
+    <div class="pane" id="pane-review">
+      <p class="small" style="margin-top:0">Complaints the AI was not sure about. Pick the right asset, or start a new one.</p>
+      <div id="reviewList"></div>
+    </div>
+
+    <div class="pane" id="pane-money">
+      <p style="margin-top:0" id="moneyIntro"></p>
+      <table id="ledger"></table>
+      <h4 style="font:700 18px var(--display);margin:18px 0 6px">Assets where repairs did not last</h4>
+      <table id="topRepeat"></table>
+    </div>
+  </section>
+</main>
+
+<section class="memory" id="memory" aria-live="polite"></section>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const state = {meta:null, assets:[], stats:null, review:[], selected:null, pin:null, detail:null, suggestion:null};
+const TYPE = {drainage:"Drain", road:"Road", streetlight:"Streetlight", footpath:"Footpath", toilet:"Toilet"};
+const CHANNEL = {app:"Complaint app", helpline:"Helpline call", whatsapp:"WhatsApp", meeting:"Public meeting"};
+
+const api = async (path, opts={}) => {
+  const r = await fetch(path, {headers:{"Content-Type":"application/json"}, ...opts});
+  if(!r.ok){ const t = await r.text(); throw new Error(t || r.statusText); }
+  return r.json();
+};
+const rupees = n => n >= 100000 ? `₹${(n/100000).toFixed(1)} lakh` : `₹${n.toLocaleString("en-IN")}`;
+const fdate = s => new Date(s+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const isKn = s => /[ಀ-೿]/.test(s);
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+
+function bandClass(p, status){
+  if(p.band.startsWith("Fixed")) return "fixed";
+  if(p.band.startsWith("Permanent fix planned")) return "planned";
+  if(p.band.startsWith("High")) return "high";
+  if(p.band.startsWith("Medium")) return "medium";
+  return "low";
+}
+const BAND_TEXT = {high:"Fix permanently", medium:"Inspect soon", low:"Routine", fixed:"Fixed, being watched", planned:"Permanent fix planned"};
+const BAND_COLOR = {high:"#C2412D", medium:"#B7791F", low:"#8A9AA6", fixed:"#2E7D5B", planned:"#2F6F9F"};
+
+/* ---------------- map ---------------- */
+let map = null, markers = {}, pinMarker = null, fallbackSvg = null;
+function initMap(){
+  const c = state.meta.center;
+  if(window.L){
+    map = L.map("map", {zoomControl:true}).setView(c, 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
+    map.on("click", e => { if(paneIs("new")) setPin(e.latlng.lat, e.latlng.lng); });
+  } else {
+    $("#map").innerHTML = '<svg id="fb" viewBox="0 0 600 600" style="width:100%;height:100%"></svg>';
+    fallbackSvg = $("#fb");
+    fallbackSvg.addEventListener("click", e => {
+      if(!paneIs("new")) return;
+      const pt = fallbackSvg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+      const p = pt.matrixTransform(fallbackSvg.getScreenCTM().inverse());
+      const [lat,lng] = fbInv(p.x,p.y); setPin(lat,lng);
+    });
+  }
+}
+const FB = {lat0:12.9255, lat1:12.9450, lng0:77.6140, lng1:77.6350};
+const fbXY = (lat,lng) => [ (lng-FB.lng0)/(FB.lng1-FB.lng0)*600, 600-(lat-FB.lat0)/(FB.lat1-FB.lat0)*600 ];
+const fbInv = (x,y) => [ FB.lat0 + (600-y)/600*(FB.lat1-FB.lat0), FB.lng0 + x/600*(FB.lng1-FB.lng0) ];
+
+function drawMarkers(){
+  const rad = a => 6 + Math.min(a.failures, 8) * 1.6;
+  if(map){
+    Object.values(markers).forEach(m => m.remove()); markers = {};
+    state.assets.forEach(a => {
+      const b = bandClass(a.priority);
+      const m = L.circleMarker([a.lat,a.lng], {radius:rad(a), color:a.id===state.selected?"#18232E":"#fff",
+        weight:a.id===state.selected?3:1.5, fillColor:BAND_COLOR[b], fillOpacity:.88})
+        .addTo(map).bindTooltip(`<b>${esc(a.id)}</b><br>${esc(a.name)}<br>${a.failures} failures, ${rupees(a.total_cost)}`);
+      m.on("click", () => openAsset(a.id));
+      markers[a.id] = m;
+    });
+  } else if(fallbackSvg){
+    fallbackSvg.innerHTML = '<rect width="600" height="600" fill="#E9EEF1"/>' + state.assets.map(a => {
+      const [x,y] = fbXY(a.lat,a.lng), b = bandClass(a.priority);
+      return `<circle cx="${x}" cy="${y}" r="${rad(a)}" fill="${BAND_COLOR[b]}" stroke="${a.id===state.selected?'#18232E':'#fff'}" stroke-width="${a.id===state.selected?3:1.5}" data-id="${a.id}" style="cursor:pointer"><title>${esc(a.id)} ${esc(a.name)}</title></circle>`;
+    }).join("") + (state.pin ? (() => { const [x,y]=fbXY(...state.pin); return `<circle cx="${x}" cy="${y}" r="7" fill="#F2C200" stroke="#18232E" stroke-width="2"/>`; })() : "");
+    fallbackSvg.querySelectorAll("circle[data-id]").forEach(c => c.addEventListener("click", ev => { ev.stopPropagation(); openAsset(c.dataset.id); }));
+  }
+}
+function setPin(lat,lng){
+  state.pin = [lat,lng];
+  $("#locText").innerHTML = `Location: <b>${lat.toFixed(5)}, ${lng.toFixed(5)}</b>`;
+  if(map){
+    if(pinMarker) pinMarker.remove();
+    pinMarker = L.circleMarker([lat,lng], {radius:8, color:"#18232E", weight:2, fillColor:"#F2C200", fillOpacity:1}).addTo(map);
+  } else drawMarkers();
+}
+
+/* ---------------- header + lists ---------------- */
+function renderHeader(){
+  const s = state.stats;
+  $("#ward").textContent = `${state.meta.ward}, Bengaluru`;
+  $("#headline").innerHTML = `<strong>${s.complaints} complaints point to ${s.assets} assets.</strong> ${rupees(s.total_spend)} spent on repairs, of which <strong>${rupees(s.repeat_spend)}</strong> went on repairs that failed again within a year.`;
+  const ai = $("#aimode");
+  ai.textContent = state.meta.ai_mode === "gemini" ? `AI: Gemini` : "AI: offline rules";
+  ai.classList.toggle("on", state.meta.ai_mode === "gemini");
+  const rv = $("#rvCount"); rv.hidden = !s.in_review; rv.textContent = s.in_review;
+}
+function renderFixList(){
+  const only = $("#onlyRisk").checked;
+  const rows = state.assets.filter(a => !only || a.prediction.at_risk);
+  $("#listInfo").textContent = `${state.stats.chronic} chronic assets, ${state.stats.at_risk} at risk before the next monsoon`;
+  $("#fixList").innerHTML = rows.map(a => {
+    const b = bandClass(a.priority);
+    return `<div class="row ${a.id===state.selected?'sel':''}" tabindex="0" data-id="${a.id}">
+      <div class="rank">${a.rank}</div>
+      <div><span class="id">${esc(a.id)}</span><span class="band ${b}">${BAND_TEXT[b]}</span>
+        <div class="nm">${esc(a.name)}</div>
+        <div class="why">${esc(a.priority.reasons.slice(0,3).map((r,i) => i ? r[0].toLowerCase()+r.slice(1) : r).join(", ") || "No repeat failures yet")}</div>
+        <div class="why">Next failure: ${esc(a.prediction.label)}</div></div></div>`;
+  }).join("") || '<p class="small">No assets match this filter.</p>';
+  document.querySelectorAll("#fixList .row").forEach(r => {
+    r.addEventListener("click", () => openAsset(r.dataset.id));
+    r.addEventListener("keydown", e => { if(e.key==="Enter") openAsset(r.dataset.id); });
+  });
+}
+function renderReview(){
+  $("#reviewList").innerHTML = state.review.map(c => {
+    const cands = (c.match.candidates || []);
+    return `<div class="rv"><div class="small">${esc(c.id)}, ${fdate(c.date)}, ${esc(CHANNEL[c.channel]||c.channel)}</div>
+      <p class="${isKn(c.text)?'kn':''}">“${esc(c.text)}”</p>
+      <div class="opts">${cands.map(x => `<button class="btn quiet" data-c="${c.id}" data-a="${x.asset_id}">Link to ${esc(x.asset_id)} (${x.distance_m} m away)</button>`).join("")}
+      <button class="btn quiet" data-c="${c.id}" data-new="1">Start a new asset here</button></div></div>`;
+  }).join("") || '<p class="small">Nothing to review. Every complaint is linked to an asset.</p>';
+  document.querySelectorAll("#reviewList button").forEach(b => b.addEventListener("click", async () => {
+    const body = b.dataset.new ? {create_new:true} : {asset_id:b.dataset.a};
+    const r = await api(`/api/review/${b.dataset.c}`, {method:"POST", body:JSON.stringify(body)});
+    toast(`Linked ${b.dataset.c} to ${r.asset.id}`);
+    await refresh(); openAsset(r.asset.id);
+  }));
+}
+function renderMoney(){
+  const s = state.stats;
+  $("#moneyIntro").innerHTML = `Of <b>${rupees(s.total_spend)}</b> spent in this ward, <b>${rupees(s.repeat_spend)}</b> went on repairs that failed again within a year.`;
+  $("#ledger").innerHTML = `<tr><th>Department</th><th class="num">Spent</th><th class="num">Repairs that did not last</th></tr>` +
+    s.ledger.map(r => `<tr><td>${esc(r.department)}</td><td class="num">${rupees(r.spend)}</td><td class="num">${rupees(r.repeat_spend)}</td></tr>`).join("");
+  const top = [...state.assets].filter(a => a.repeat_spend).sort((a,b) => b.repeat_spend - a.repeat_spend).slice(0,6);
+  $("#topRepeat").innerHTML = `<tr><th>Asset</th><th class="num">Failures</th><th class="num">Wasted on short-lived repairs</th></tr>` +
+    top.map(a => `<tr data-id="${a.id}" style="cursor:pointer"><td><b>${esc(a.id)}</b> ${esc(a.name)}</td><td class="num">${a.failures}</td><td class="num">${rupees(a.repeat_spend)}</td></tr>`).join("");
+  document.querySelectorAll("#topRepeat tr[data-id]").forEach(r => r.addEventListener("click", () => openAsset(r.dataset.id)));
+}
+
+/* ---------------- tabs ---------------- */
+function paneIs(name){ return $(`#pane-${name}`).classList.contains("active"); }
+function showPane(name){
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.pane===name));
+  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("active", p.id===`pane-${name}`));
+  $("#maphint").classList.toggle("show", name==="new" && !state.pin);
+}
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => showPane(b.dataset.pane)));
+
+/* ---------------- new complaint ---------------- */
+const PRESETS = [
+  {label:"Kanglish, bus stop", text:"Bus stop hatra road mele neeru nintide", lat:12.93695, lng:77.62675, ch:"whatsapp"},
+  {label:"Kannada, same drain", text:"ಬಸ್ ನಿಲ್ದಾಣ ಹತ್ತಿರ ಚರಂಡಿ ತುಂಬಿದೆ", lat:12.93700, lng:77.62690, ch:"app"},
+  {label:"Pothole at the bus stop", text:"Big pothole near bus stop, bikes falling", lat:12.93755, lng:77.62615, ch:"helpline"},
+  {label:"Streetlight at school", text:"Street lights off near school, very dark", lat:12.93315, lng:77.62895, ch:"app"},
+  {label:"Unclear place", text:"Road flooded near 5th Cross", lat:12.9352, lng:77.6245, ch:"helpline"},
+  {label:"New place", text:"Footpath slab broken near new apartment gate", lat:12.9428, lng:77.6335, ch:"app"},
+];
+$("#presets").innerHTML = PRESETS.map((p,i) => `<button data-i="${i}">${esc(p.label)}</button>`).join("");
+document.querySelectorAll("#presets button").forEach(b => b.addEventListener("click", () => {
+  const p = PRESETS[b.dataset.i];
+  // the sample ward may have been moved (phone app: "Bring the sample ward here"), so shift the example by the same amount
+  const c = (state.meta && state.meta.center) || [12.9352, 77.6245];
+  const lat = p.lat + c[0] - 12.9352, lng = p.lng + c[1] - 77.6245;
+  $("#ctext").value = p.text; $("#ctext").classList.toggle("kn", isKn(p.text)); $("#cchan").value = p.ch;
+  setPin(lat, lng); $("#maphint").classList.remove("show");
+  if(map) map.panTo([lat,lng]);
+}));
+$("#ctext").addEventListener("input", e => e.target.classList.toggle("kn", isKn(e.target.value)));
+
+$("#checkBtn").addEventListener("click", async () => {
+  const text = $("#ctext").value.trim();
+  if(text.length < 3){ $("#result").innerHTML = '<p class="small">Type the complaint first.</p>'; return; }
+  if(!state.pin){ $("#result").innerHTML = '<p class="small">Click the map to set where the problem is.</p>'; $("#maphint").classList.add("show"); return; }
+  $("#checkBtn").disabled = true; $("#checkBtn").textContent = "Checking…";
+  try{
+    const r = await api("/api/complaints", {method:"POST", body:JSON.stringify({text, lat:state.pin[0], lng:state.pin[1], channel:$("#cchan").value})});
+    renderResult(r);
+    await refresh();
+  }catch(e){ $("#result").innerHTML = `<p class="small">Could not check the complaint: ${esc(e.message)}</p>`; }
+  finally{ $("#checkBtn").disabled = false; $("#checkBtn").textContent = "Check complaint"; }
+});
+
+function renderResult(r){
+  const lvl = r.alert.level, u = r.understanding;
+  const best = r.candidates[0];
+  const names = {location:"Location", meaning:"Words", type:"Problem type", time:"Recent activity"};
+  const sigs = best ? Object.entries(best.signals).map(([k,v]) =>
+    `<div class="sig"><span>${names[k]}</span><span class="track"><i style="width:${Math.round(v*100)}%"></i></span><span>${Math.round(v*100)}%</span></div>`).join("") : "";
+  const decided = {auto:"Linked automatically", review:"Sent to review", new:"New asset started"}[r.decision];
+  $("#result").innerHTML = `<div class="result ${lvl}">
+    <div class="bar"><h3>${esc(r.alert.headline)}</h3><div>${esc(r.alert.detail)}</div></div>
+    <div class="body">
+      <div class="small">Understood as: <b>${u.type ? TYPE[u.type] : "unclear"}</b> problem (${esc(u.source)})${u.english ? `, “${esc(u.english)}”` : ""}</div>
+      ${best ? `<div class="small" style="margin:8px 0 4px">${decided}. Best match <b>${esc(best.asset_id)}</b>, ${best.distance_m} m away, match ${Math.round(best.score*100)}%</div>${sigs}` : ""}
+      ${r.asset ? `<button class="btn" style="margin-top:10px" id="openRes">Open ${esc(r.asset.id)}'s memory</button>` : `<button class="btn" style="margin-top:10px" id="goRv">Go to review</button>`}
+    </div></div>`;
+  if(r.asset) $("#openRes").addEventListener("click", () => openAsset(r.asset.id));
+  else $("#goRv").addEventListener("click", () => showPane("review"));
+}
+
+/* ---------------- asset memory ---------------- */
+async function openAsset(id){
+  state.selected = id; state.suggestion = null;
+  const d = await api(`/api/assets/${id}`);
+  state.detail = d;
+  drawMarkers(); renderFixList();
+  if(map && markers[id]) map.panTo(markers[id].getLatLng());
+  renderMemory();
+  $("#memory").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+}
+
+function renderMemory(){
+  const d = state.detail, a = d.asset, an = d.analysis, p = d.priority, b = bandClass(p);
+  const last = an.days_since_last_repair;
+  const facts = [
+    [`${an.failures}`, `failures from ${an.complaints} complaints`],
+    [`${an.repairs}`, "repairs"],
+    [rupees(an.total_cost), "spent so far", an.total_cost >= 200000],
+    [an.shortest_lasted_days != null ? `${an.shortest_lasted_days} days` : "–", "shortest a repair lasted", an.shortest_lasted_days != null && an.shortest_lasted_days <= 90],
+    [last != null ? `${last} days ago` : "–", "last repaired"],
+    [an.prediction.date ? new Date(an.prediction.date+"T00:00:00").toLocaleDateString("en-GB",{month:"short",year:"numeric"}) : "–", "next failure likely", an.prediction.at_risk],
+  ];
+  const fl = p.factors, factorRow = (lab, v) => `<div class="factor"><div><span>${lab}</span><span>${Math.round(v*100)}</span></div><div class="track"><i style="width:${Math.round(v*100)}%"></i></div></div>`;
+
+  const lasted = Object.fromEntries(an.repairs_detail.map(x => [x.repair_id, x]));
+  const recs = [
+    ...d.complaints.map(c => ({kind:"complaint", id:c.id, date:c.date, html:`<span class="${isKn(c.text)?'kn':''}">“${esc(c.text)}”</span><div class="meta">${esc(c.id)}, ${esc(CHANNEL[c.channel]||c.channel)}</div>`})),
+    ...d.repairs.map(r => { const L = lasted[r.id]; const held = L.lasted_days != null ? `failed again after ${L.lasted_days} days` : `holding for ${L.still_holding_days} days`;
+      return {kind:r.kind==="permanent"?"repair permanent":"repair", id:r.id, date:r.date, html:`${esc(r.note)}, <b>${rupees(r.cost)}</b><div class="meta">${esc(r.id)}, ${r.kind==="permanent"?"permanent fix":"patch"}, ${held}</div>`}; }),
+  ].sort((x,y) => y.date.localeCompare(x.date));
+
+  $("#memory").innerHTML = `
+    <div class="mhead">
+      <div><div class="aid">${esc(a.id)} <span class="band ${b}" style="font-size:14px;vertical-align:6px">${BAND_TEXT[b]}</span></div>
+        <div class="anm">${esc(a.name)}</div>
+        <div class="dept">${esc(TYPE[a.type])}, ${esc(d.department)} department${a.near ? `, ${esc({bus_stop:"at a bus stop",school:"near a school",hospital:"near a hospital",market:"near a market"}[a.near])}` : ""}</div></div>
+      <button class="close" aria-label="Close asset memory" id="closeMem">×</button>
+    </div>
+    <div class="facts">${facts.map(([v,l,w]) => `<div class="${w?'warn':''}"><b>${esc(v)}</b>${esc(l)}</div>`).join("")}</div>
+    <div class="strip">${timelineSVG(d)}</div>
+    <div class="mgrid">
+      <div>
+        <h4>Why it is ranked #${state.assets.find(x=>x.id===a.id)?.rank ?? "–"}</h4>
+        <div class="score">${Math.round(p.score*100)}<span class="small"> / 100 priority</span></div>
+        ${factorRow("How often it fails", fl.recurrence)}${factorRow("Money spent", fl.cost)}${factorRow("Risk to people", fl.safety)}${factorRow("People affected", fl.impact)}
+        <ul class="reasons">${p.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+        <p class="small">${esc(an.prediction.label)}${an.prediction.why ? `. Based on ${esc(an.prediction.why)}.` : "."}</p>
+      </div>
+      <div><h4>Full history</h4><div class="records" id="records">${recs.map(r => `<div class="rec ${r.kind}" data-id="${r.id}"><span class="dt">${fdate(r.date)}</span><span class="mk"></span><div>${r.html}</div></div>`).join("")}</div></div>
+      <div><h4>Root cause</h4><div class="ai" id="aiBox">${aiBox()}</div></div>
+    </div>`;
+  $("#memory").classList.add("show");
+  $("#closeMem").addEventListener("click", () => { $("#memory").classList.remove("show"); state.selected=null; drawMarkers(); renderFixList(); });
+  wireAI();
+}
+
+function aiBox(){
+  const d = state.detail, a = d.asset, s = state.suggestion;
+  const decided = d.decisions.filter(x => x.action==="approve_fix").pop();
+  if(!s){
+    return `<p class="small" style="margin-top:0">The AI reads only this asset's own records and must show which ones it used.</p>
+      <button class="btn primary" id="suggestBtn">Suggest root cause</button>
+      ${decided ? `<div class="done">Permanent fix approved on ${fdate(decided.date)}</div>` : ""}`;
+  }
+  return `<div class="src">${esc(s.source)}, confidence ${esc(s.confidence_label.toLowerCase())} (${Math.round(s.confidence*100)}%)</div>
+    <p><b>Likely cause.</b> ${esc(s.cause)}</p>
+    <p><b>Permanent fix.</b> ${esc(s.fix)}</p>
+    ${s.evidence.length ? `<div class="small">Based on these records (click to see them)</div><div class="chips">${s.evidence.map(e => `<button data-ev="${e}">${esc(e)}</button>`).join("")}</div>` : ""}
+    ${s.note ? `<p class="small">${esc(s.note)}</p>` : ""}
+    ${a.status==="fix_planned" || decided ? `<div class="done">Permanent fix approved. CityMemory will watch whether it holds next monsoon.</div>` :
+      `<div class="decision"><button class="btn primary" id="approveBtn">Approve permanent fix</button><button class="btn quiet" id="notNow">Not now</button></div>`}
+    <p class="small">The AI only suggests. The city employee decides.</p>`;
+}
+function wireAI(){
+  const sb = $("#suggestBtn");
+  if(sb) sb.addEventListener("click", async () => {
+    sb.disabled = true; sb.textContent = "Reading the records…";
+    try{ state.suggestion = await api(`/api/assets/${state.selected}/suggest`, {method:"POST"}); }
+    catch(e){ toast("Could not get a suggestion: " + e.message); }
+    $("#aiBox").innerHTML = aiBox(); wireAI(); highlight(state.suggestion?.evidence || []);
+  });
+  document.querySelectorAll("#aiBox [data-ev]").forEach(b => b.addEventListener("click", () => {
+    highlight([b.dataset.ev]);
+    const el = document.querySelector(`.rec[data-id="${b.dataset.ev}"]`); if(el) el.scrollIntoView({block:"nearest"});
+  }));
+  const ap = $("#approveBtn");
+  if(ap) ap.addEventListener("click", async () => {
+    const r = await api(`/api/assets/${state.selected}/decision`, {method:"POST", body:JSON.stringify({action:"approve_fix", note:"Approved from dashboard", suggestion:state.suggestion})});
+    toast(`Permanent fix approved for ${state.selected}`);
+    state.detail.asset.status = "fix_planned"; state.detail.decisions.push(r.decision);
+    await refresh(); $("#aiBox").innerHTML = aiBox(); wireAI();
+  });
+  const nn = $("#notNow");
+  if(nn) nn.addEventListener("click", () => { state.suggestion = null; $("#aiBox").innerHTML = aiBox(); wireAI(); highlight([]); });
+}
+function highlight(ids){
+  document.querySelectorAll(".rec").forEach(r => r.classList.toggle("hl", ids.includes(r.dataset.id)));
+  document.querySelectorAll(".strip [data-id]").forEach(m => m.setAttribute("stroke-width", ids.includes(m.dataset.id) ? 3 : 0));
+}
+
+/* ---------------- the memory strip ---------------- */
+function timelineSVG(d){
+  const an = d.analysis, W = 1000, H = 214, L = 98, R = 980;
+  const today = new Date(state.meta.today+"T00:00:00");
+  const dates = [...d.complaints.map(c=>c.date), ...d.repairs.map(r=>r.date)].map(s => new Date(s+"T00:00:00"));
+  const pred = an.prediction.date ? new Date(an.prediction.date+"T00:00:00") : null;
+  const start = new Date(Math.min(new Date("2024-01-01"), ...dates));
+  const end = new Date(Math.max(today, pred || today).valueOf() + 75*864e5);
+  const x = t => L + (t - start) / (end - start) * (R - L);
+  const yC = 70, yR = 132, yAx = 178;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Timeline of complaints and repairs for ${esc(d.asset.id)}">`;
+  // rain seasons
+  for(let y = start.getFullYear(); y <= end.getFullYear(); y++){
+    const a0 = Math.max(x(new Date(y,4,15)), L), a1 = Math.min(x(new Date(y,10,1)), R);
+    if(a1 > a0) s += `<rect x="${a0}" y="18" width="${a1-a0}" height="${yAx-22}" fill="#E2EDF5"/><text x="${(a0+a1)/2}" y="32" text-anchor="middle" font-size="12" fill="#2F6F9F">rains ${y}</text>`;
+  }
+  // lanes
+  s += `<text x="${L-10}" y="${yC+4}" text-anchor="end" font-size="13" fill="#3A4A57">Complaints</text><line x1="${L}" x2="${R}" y1="${yC}" y2="${yC}" stroke="#D3DCE1"/>`;
+  s += `<text x="${L-10}" y="${yR+4}" text-anchor="end" font-size="13" fill="#3A4A57">Repairs</text><line x1="${L}" x2="${R}" y1="${yR}" y2="${yR}" stroke="#D3DCE1"/>`;
+  // axis
+  s += `<line x1="${L}" x2="${R}" y1="${yAx}" y2="${yAx}" stroke="#9FB2BE"/>`;
+  for(let y = start.getFullYear(); y <= end.getFullYear(); y++){
+    [0,6].forEach(m => { const t = new Date(y,m,1); if(t>=start && t<=end){ const xx = x(t);
+      s += `<line x1="${xx}" x2="${xx}" y1="${yAx}" y2="${yAx+5}" stroke="#9FB2BE"/><text x="${xx}" y="${yAx+19}" font-size="12" text-anchor="middle" fill="#5B6B78">${t.toLocaleDateString("en-GB",{month:"short",year:"numeric"})}</text>`; } });
+  }
+  // today
+  const tx = x(today);
+  s += `<line x1="${tx}" x2="${tx}" y1="40" y2="${yAx}" stroke="#18232E" stroke-dasharray="3 3"/><text x="${tx}" y="48" font-size="11.5" text-anchor="end" dx="-4" fill="#18232E">today</text>`;
+  // repairs that did not last: a red bracket from the repair to the next failure
+  let shortIdx = 0;
+  an.repairs_detail.forEach(r => {
+    if(r.lasted_days != null && r.lasted_days <= 90){
+      const x0 = x(new Date(r.date+"T00:00:00")), x1 = x0 + r.lasted_days*864e5/(end-start)*(R-L);
+      const ly = yC + 30 + (shortIdx++ % 2) * 14;
+      s += `<path d="M${x0} ${yR-10} L${x0} ${yC+14} L${x1} ${yC+14} L${x1} ${yC+9}" fill="none" stroke="#C2412D" stroke-width="1.5"/><text x="${(x0+x1)/2}" y="${ly}" font-size="11.5" text-anchor="middle" fill="#C2412D" paint-order="stroke" stroke="#fff" stroke-width="3">lasted ${r.lasted_days} days</text>`;
+    }
+  });
+  // complaints (stack ones that fall on top of each other)
+  let lastX = -99, stack = 0;
+  [...d.complaints].sort((a,b)=>a.date.localeCompare(b.date)).forEach(c => {
+    const cx = x(new Date(c.date+"T00:00:00"));
+    stack = (cx - lastX < 9) ? stack + 1 : 0; lastX = cx;
+    s += `<circle data-id="${c.id}" cx="${cx}" cy="${yC - stack*11}" r="6.5" fill="#C2412D" stroke="#18232E" stroke-width="0"><title>${esc(fdate(c.date))}: ${esc(c.text)}</title></circle>`;
+  });
+  // repairs
+  let alt = 0;
+  [...d.repairs].sort((a,b)=>a.date.localeCompare(b.date)).forEach(r => {
+    const rx = x(new Date(r.date+"T00:00:00")), col = r.kind==="permanent" ? "#2E7D5B" : "#18232E";
+    s += `<path data-id="${r.id}" d="M${rx-7} ${yR+7} L${rx} ${yR-7} L${rx+7} ${yR+7} Z" fill="${col}" stroke="#F2C200" stroke-width="0"><title>${esc(fdate(r.date))}: ${esc(r.note)}, ${rupees(r.cost)}</title></path>`;
+    const label = r.kind==="permanent" ? `permanent fix ${rupees(r.cost)}` : `₹${Math.round(r.cost/1000)}k`;
+    s += `<text x="${rx}" y="${yR + 22 + (alt++%2)*13}" font-size="11.5" text-anchor="middle" fill="${col}">${label}</text>`;
+  });
+  // prediction
+  if(pred){
+    const px = x(pred);
+    s += `<line x1="${tx}" x2="${px}" y1="${yC}" y2="${yC}" stroke="#C2412D" stroke-dasharray="5 4"/><circle cx="${px}" cy="${yC}" r="9" fill="#fff" stroke="#C2412D" stroke-width="2.5"/>`;
+    s += `<text x="${px}" y="${yC-17}" font-size="12.5" font-weight="700" text-anchor="${px>R-80?'end':'middle'}" fill="#C2412D">next failure likely</text>`;
+  }
+  return s + `</svg>`;
+}
+
+/* ---------------- data ---------------- */
+async function refresh(){
+  const [assets, stats, review] = await Promise.all([api("/api/assets"), api("/api/stats"), api("/api/review")]);
+  Object.assign(state, {assets, stats, review});
+  renderHeader(); renderFixList(); renderReview(); renderMoney(); drawMarkers();
+}
+$("#onlyRisk").addEventListener("change", renderFixList);
+$("#resetBtn").addEventListener("click", async () => {
+  if(!confirm("Restore the original sample ward? New complaints and decisions from this session will be removed.")) return;
+  await api("/api/reset", {method:"POST"});
+  state.pin = null; state.selected = null; $("#memory").classList.remove("show"); $("#result").innerHTML = "";
+  if(pinMarker){ pinMarker.remove(); pinMarker = null; }
+  $("#locText").innerHTML = "Location: <b>not set</b>. Click the map, or try an example below.";
+  await refresh(); toast("Sample ward restored");
+});
+
+(async () => {
+  try{
+    state.meta = await api("/api/meta");
+    initMap(); await refresh();
+  }catch(e){ $("#headline").textContent = "Could not reach the CityMemory server. Is run.py running?"; }
+})();
+</script>
+</body>
+</html>

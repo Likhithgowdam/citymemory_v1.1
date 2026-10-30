@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">City Memory</string>
+    <string name="app_version">1.1</string>
+
+    <string name="server_title">Connect to the City Memory server</string>
+    <string name="server_help">Start run.py on the laptop. Then type the laptop\'s address here, for example http://192.168.1.10:8000\n\nThe phone and the laptop must be on the same Wi-Fi or hotspot. On the Android emulator, tap "Emulator".</string>
+    <string name="connect">Connect</string>
+    <string name="use_emulator">Emulator</string>
+
+    <string name="photo_title">Add a photo</string>
+    <string name="voice_prompt">Speak now</string>
+    <string name="voice_missing">Voice typing is not available on this phone. Please type instead.</string>
+
+    <string name="loc_denied">Location permission was not given. You can still pick the place on the map.</string>
+    <string name="loc_off">Location is turned off. Turn it on in quick settings, or pick the place on the map.</string>
+    <string name="loc_slow">Could not get your location in time. Try again near a window, or pick the place on the map.</string>
+</resources>
