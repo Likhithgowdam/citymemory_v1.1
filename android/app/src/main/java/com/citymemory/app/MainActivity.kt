@@ -16,6 +16,8 @@ import android.graphics.Bitmap
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -43,8 +45,13 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.URL
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * City Memory for Android.
@@ -66,6 +73,16 @@ class MainActivity : Activity() {
     private var pendingLocation = false
     private var clearHistoryAfterLoad = false
     private var openHash: String? = null          // screen to open, e.g. from a danger notification
+
+    // finding the laptop automatically when its address changes (new Wi-Fi or hotspot)
+    @Volatile private var searching = false
+    private var autoTried = false                 // one automatic search per failure, so it never loops
+    private var loadFailed = false
+    private var uiWaiting = false                 // a visible search is waiting for its answer
+    private var uiFirst = false                   // ...on first launch (ask for the address if nothing found)
+    private var lastDetail = ""
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
+    private val netRecheck = Runnable { recheckServer() }
 
     // read aloud
     private var tts: TextToSpeech? = null
@@ -125,9 +142,10 @@ class MainActivity : Activity() {
         openHash = intent?.getStringExtra("open")
         val restored = savedInstanceState != null && webView.restoreState(savedInstanceState) != null
         if (!restored) {
-            if (serverUrl().isEmpty()) askServer(first = true) else loadApp()
+            if (serverUrl().isEmpty()) autoFind(first = true) else loadApp()
         }
         main.postDelayed(dangerCheck, 5_000)
+        watchNetwork()
     }
 
     /** A danger notification was tapped while the app was already open. */
@@ -154,6 +172,10 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         main.removeCallbacks(dangerCheck)
+        main.removeCallbacks(netRecheck)
+        netCallback?.let { cb ->
+            try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } catch (e: Exception) { }
+        }
         tts?.shutdown()
         webView.destroy()
         super.onDestroy()
@@ -223,6 +245,161 @@ class MainActivity : Activity() {
         builder.show()
     }
 
+    // ---------------------------------------------------------------- finding the laptop automatically
+
+    /** True if [base] answers like a City Memory server. Call off the main thread. */
+    private fun isServer(base: String, timeoutMs: Int): Boolean = try {
+        val conn = URL("$base/api/meta").openConnection() as HttpURLConnection
+        conn.connectTimeout = timeoutMs
+        conn.readTimeout = timeoutMs + 1_500
+        val ok = conn.responseCode == 200 && conn.inputStream.bufferedReader().use { it.readText() }.contains("\"ward\"")
+        conn.disconnect()
+        ok
+    } catch (e: Exception) {
+        false
+    }
+
+    /**
+     * Look for the server on this phone's local networks: the Wi-Fi it is on, or the hotspot it is
+     * sharing. Tries every address x.x.x.1-254 on the server's port, many at once (a few seconds).
+     * Call off the main thread. Returns e.g. "http://10.222.91.79:8000", or null.
+     */
+    private fun scanForServer(): String? {
+        val saved = Uri.parse(serverUrl())
+        val port = if (saved.port > 0) saved.port else DEFAULT_PORT
+        val own = HashSet<String>()
+        val local = LinkedHashSet<String>()      // Wi-Fi, hotspot, USB tethering
+        val other = LinkedHashSet<String>()      // anything else private, except mobile data
+        try {
+            for (nif in NetworkInterface.getNetworkInterfaces()) {
+                if (!nif.isUp || nif.isLoopback) continue
+                val name = nif.name.lowercase(Locale.ROOT)
+                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("tun") || name.startsWith("dummy")) continue
+                val isLocal = listOf("wlan", "ap", "swlan", "softap", "eth", "rndis", "usb", "bt").any { name.startsWith(it) }
+                for (addr in nif.inetAddresses) {
+                    if (addr !is Inet4Address || !addr.isSiteLocalAddress) continue
+                    val ip = addr.hostAddress ?: continue
+                    own.add(ip)
+                    (if (isLocal) local else other).add(ip.substringBeforeLast('.'))
+                }
+            }
+        } catch (e: Exception) {
+            // no interfaces readable; fall back to the saved address's network below
+        }
+        val prefixes = LinkedHashSet<String>().apply {
+            addAll(local)
+            if (local.isEmpty()) addAll(other)
+            saved.host?.let { h -> if (h.count { it == '.' } == 3 && h.all { it.isDigit() || it == '.' }) add(h.substringBeforeLast('.')) }
+        }
+        val found = AtomicReference<String?>(null)
+        val pool = Executors.newFixedThreadPool(48)
+        try {
+            for (p in prefixes) {
+                val jobs = (1..254).map { "$p.$it" }.filter { it !in own }.map { ip ->
+                    pool.submit {
+                        if (found.get() == null) {
+                            val base = "http://$ip:$port"
+                            if (isServer(base, 700)) found.compareAndSet(null, base)
+                        }
+                    }
+                }
+                for (j in jobs) {
+                    try { j.get(5, TimeUnit.SECONDS) } catch (e: Exception) { }
+                    if (found.get() != null) break
+                }
+                if (found.get() != null) break
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+        return found.get()
+    }
+
+    /** Check the saved address; if it is dead, search the local network. Shows a short "looking" screen. */
+    private fun autoFind(first: Boolean = false, detail: String = "") {
+        uiWaiting = true
+        uiFirst = uiFirst || first
+        lastDetail = detail
+        showSearching()
+        startSearch(checkSavedMs = 1_500)
+    }
+
+    /** The phone joined a network: if the laptop moved to a new address, follow it quietly. */
+    private fun recheckServer() {
+        if (serverUrl().isNotEmpty()) startSearch(checkSavedMs = 2_000)
+    }
+
+    private fun startSearch(checkSavedMs: Int) {
+        if (searching) return            // a search is already running; it will finish the job
+        searching = true
+        Thread {
+            val saved = serverUrl()
+            val alive = saved.isNotEmpty() && isServer(saved, checkSavedMs)
+            val base = if (alive) saved else scanForServer()
+            main.post {
+                searching = false
+                finishSearch(saved, base)
+            }
+        }.start()
+    }
+
+    private fun finishSearch(saved: String, base: String?) {
+        val showUi = uiWaiting
+        val first = uiFirst
+        uiWaiting = false
+        uiFirst = false
+        when {
+            base != null && (showUi || base != saved) -> {
+                if (!showUi) {   // quiet move: stay on the same screen
+                    val url = webView.url ?: ""
+                    if (url.contains('#') && url.startsWith(saved)) openHash = "#" + url.substringAfter('#')
+                }
+                prefs.edit().putString(KEY_SERVER, base).apply()
+                loadApp()
+            }
+            base == null && showUi ->
+                if (first) askServer(first = true)
+                else showOffline(lastDetail.ifEmpty { "Could not find the laptop on this Wi-Fi or hotspot." })
+            // quiet check with nothing new: leave the screen alone (the app keeps working offline)
+        }
+    }
+
+    private fun watchNetwork() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                main.removeCallbacks(netRecheck)
+                main.postDelayed(netRecheck, 2_500)   // let Wi-Fi settle first
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+            netCallback = cb
+        } catch (e: Exception) {
+            // not available; the "Find the laptop" button still works
+        }
+    }
+
+    private fun showSearching() {
+        val html = """
+            <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>
+              body{margin:0;font-family:sans-serif;background:#F3F6F7;color:#18232E;padding:28px 22px}
+              h1{font-size:24px;margin:18px 0 8px} p{line-height:1.45;color:#3A4A57;margin:0 0 10px}
+              .kerb{height:8px;border-radius:4px;background:repeating-linear-gradient(-45deg,#F2C200 0 6px,#18232E 6px 12px)}
+              .spin{width:40px;height:40px;border:5px solid #D3DCE1;border-top-color:#18232E;border-radius:50%;
+                    animation:s 0.9s linear infinite;margin:28px 0 8px} @keyframes s{to{transform:rotate(360deg)}}
+            </style></head><body>
+            <div class="kerb"></div>
+            <div class="spin"></div>
+            <h1>Looking for the City Memory laptop…</h1>
+            <p>ಲ್ಯಾಪ್‌ಟಾಪ್ ಹುಡುಕುತ್ತಿದೆ · लैपटॉप खोज रहे हैं</p>
+            <p>Checking this Wi-Fi or hotspot. This takes a few seconds.</p>
+            </body></html>
+        """.trimIndent()
+        webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+    }
+
     /** Shown when the server cannot be reached (wrong address, laptop off, different Wi-Fi). */
     private fun showOffline(detail: String) {
         val server = TextUtils.htmlEncode(serverUrl())
@@ -247,7 +424,8 @@ class MainActivity : Activity() {
               <li>Are the phone and laptop on the same Wi-Fi or hotspot?</li>
               <li>Is the address the laptop's IP, like <code>http://192.168.1.10:8000</code>?</li>
             </ol>
-            <button class="dark" onclick="CMNative.retry()">Try again</button>
+            <button class="dark" onclick="CMNative.findServer()">Find the laptop automatically</button>
+            <button class="light" onclick="CMNative.retry()">Try again</button>
             <button class="light" onclick="CMNative.openSettings()">Change server address</button>
             </body></html>
         """.trimIndent()
@@ -282,6 +460,11 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun retry() {
             main.post { loadApp() }
+        }
+
+        @JavascriptInterface
+        fun findServer() {
+            main.post { autoTried = true; autoFind() }
         }
 
         @JavascriptInterface
@@ -438,10 +621,12 @@ class MainActivity : Activity() {
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             loadingBar.visibility = View.VISIBLE
+            loadFailed = false
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             loadingBar.visibility = View.GONE
+            if (!loadFailed && url != null && url.startsWith(serverUrl())) autoTried = false   // reached the server
             if (clearHistoryAfterLoad && url != null && url.startsWith(serverUrl())) {
                 clearHistoryAfterLoad = false
                 view.clearHistory()   // so Back does not return to the error screen
@@ -449,7 +634,15 @@ class MainActivity : Activity() {
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (request.isForMainFrame) showOffline(error.description?.toString() ?: "")
+            if (!request.isForMainFrame) return
+            loadFailed = true
+            val detail = error.description?.toString() ?: ""
+            if (!autoTried) {
+                autoTried = true       // the laptop's address may have changed: look for it once
+                autoFind(detail = detail)
+            } else {
+                showOffline(detail)
+            }
         }
 
         override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
