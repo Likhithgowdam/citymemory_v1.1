@@ -36,4 +36,11 @@ if __name__ == "__main__":
     if os.getenv("CITYMEMORY_TODAY"):
         print(f"  Demo date: {os.getenv('CITYMEMORY_TODAY')}")
     print("  Stop with the red square in IntelliJ (or Ctrl+C)\n")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    if sys.platform == "win32" and sys.version_info >= (3, 12):
+        # Windows' default (Proactor) loop stops accepting connections after a phone
+        # drops mid-connect (WinError 64). The selector loop keeps serving.
+        import asyncio
+        server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning"))
+        asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
